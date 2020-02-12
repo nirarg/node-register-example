@@ -1,0 +1,7 @@
+apiVersion: app.kubejoin.com/v1alpha1
+kind: NodeRegister
+metadata:
+  name: example-noderegister
+spec:
+  # Add fields here
+  size: 1
