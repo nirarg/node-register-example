@@ -10,7 +10,9 @@ import (
 // NodeRegisterSpec defines the desired state of NodeRegister
 type NodeRegisterSpec struct {
 	// Size is the size of the nodeRegister deployment
-	Size int32 `json:"size"`
+	Size       int32 `json:"size"`
+	Port       int32 `json:"port"`
+	TargetPort int32 `json:"target_port"`
 }
 
 // NodeRegisterStatus defines the observed state of NodeRegister

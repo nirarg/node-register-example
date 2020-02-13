@@ -16,10 +16,10 @@ spec:
       containers:
         - name: app-operator
           # Replace this with the built image name
-          image: node-register-operator:v0.0.1
+          image: quay.io/nargaman/node-register-operator:v0.0.1
           command:
           - app-operator
-          imagePullPolicy: Never
+          imagePullPolicy: IfNotPresent
           env:
             - name: WATCH_NAMESPACE
               valueFrom:

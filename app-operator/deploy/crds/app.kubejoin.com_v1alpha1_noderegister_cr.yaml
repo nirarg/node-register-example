@@ -5,3 +5,5 @@ metadata:
 spec:
   # Add fields here
   size: 1
+  port: 9090
+  target_port: 8080

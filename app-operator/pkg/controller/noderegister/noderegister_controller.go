@@ -4,6 +4,8 @@ import (
 	"context"
 	"reflect"
 
+	"k8s.io/apimachinery/pkg/util/intstr"
+
 	"github.com/go-logr/logr"
 
 	appv1alpha1 "github.com/example-inc/app-operator/pkg/apis/app/v1alpha1"
@@ -114,6 +116,10 @@ func (r *ReconcileNodeRegister) Reconcile(request reconcile.Request) (reconcile.
 		// Define a new deployment
 		reqLogger.Info("Deployment is not found")
 		dep := r.deploymentForNodeRegister(nodeRegister, reqLogger)
+		reqLogger.Info("Set NodeRegister instance as the owner and controller of the deploy object")
+		if err := controllerutil.SetControllerReference(nodeRegister, dep, r.scheme); err != nil {
+			return reconcile.Result{}, err
+		}
 		reqLogger.Info("Creating a new Deployment", "Deployment.Namespace", dep.Namespace, "Deployment.Name", dep.Name)
 		err = r.client.Create(context.TODO(), dep)
 		if err != nil {
@@ -162,6 +168,31 @@ func (r *ReconcileNodeRegister) Reconcile(request reconcile.Request) (reconcile.
 		}
 	}
 
+	reqLogger.Info("Define a new service object")
+	service := newServiceForCR(nodeRegister)
+
+	reqLogger.Info("Check if the service already exists")
+	foundService := &corev1.Service{}
+	err = r.client.Get(context.TODO(), types.NamespacedName{Name: service.Name, Namespace: service.Namespace}, foundService)
+	if err != nil && errors.IsNotFound(err) {
+		reqLogger.Info("Creating a new Service", "service.Namespace", service.Namespace, "service.Name", service.Name)
+		err = r.client.Create(context.TODO(), service)
+		if err != nil {
+			return reconcile.Result{}, err
+		}
+
+		reqLogger.Info("Set NodeRegister instance as the owner and controller of the service")
+		if err := controllerutil.SetControllerReference(nodeRegister, service, r.scheme); err != nil {
+			return reconcile.Result{}, err
+		}
+
+		reqLogger.Info("Service created successfully - don't requeue")
+		return reconcile.Result{}, nil
+	} else if err != nil {
+		return reconcile.Result{}, err
+	}
+	reqLogger.Info("Service already exists - don't requeue")
+
 	return reconcile.Result{}, nil
 }
 
@@ -186,20 +217,42 @@ func (r *ReconcileNodeRegister) deploymentForNodeRegister(nr *appv1alpha1.NodeRe
 				},
 				Spec: corev1.PodSpec{
 					Containers: []corev1.Container{{
-						Image:           "node-register-server",
+						Image:           "quay.io/nargaman/node-register-server:v0.0.1",
 						Name:            nr.Name + "-pod",
-						ImagePullPolicy: "Never",
+						ImagePullPolicy: "IfNotPresent",
 						Ports: []corev1.ContainerPort{{
-							ContainerPort: 8080,
+							ContainerPort: nr.Spec.TargetPort,
 						}},
 					}},
 				},
 			},
 		},
 	}
-	reqLogger.Info("Set NodeRegister instance as the owner and controller")
-	controllerutil.SetControllerReference(nr, dep, r.scheme)
 	return dep
+}
+
+// newPodForCR returns a busybox pod with the same name/namespace as the cr
+func newServiceForCR(nr *appv1alpha1.NodeRegister) *corev1.Service {
+	ls := labelsForNodeRegister(nr.Name)
+	return &corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      nr.Name + "-service",
+			Namespace: nr.Namespace,
+			Labels:    ls,
+		},
+		Spec: corev1.ServiceSpec{
+			Type: "NodePort",
+			Ports: []corev1.ServicePort{
+				{
+					Port:       nr.Spec.Port,
+					Name:       "http",
+					Protocol:   corev1.ProtocolTCP,
+					TargetPort: intstr.IntOrString{Type: intstr.Int, IntVal: nr.Spec.TargetPort},
+				},
+			},
+			Selector: ls,
+		},
+	}
 }
 
 // labelsForMemcached returns the labels for selecting the resources
@@ -215,27 +268,4 @@ func getPodNames(pods []corev1.Pod) []string {
 		podNames = append(podNames, pod.Name)
 	}
 	return podNames
-}
-
-// newPodForCR returns a busybox pod with the same name/namespace as the cr
-func newPodForCR(cr *appv1alpha1.NodeRegister) *corev1.Pod {
-	labels := map[string]string{
-		"app": cr.Name,
-	}
-	return &corev1.Pod{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      cr.Name + "-pod",
-			Namespace: cr.Namespace,
-			Labels:    labels,
-		},
-		Spec: corev1.PodSpec{
-			Containers: []corev1.Container{
-				{
-					Name:    "busybox",
-					Image:   "busybox",
-					Command: []string{"sleep", "3600"},
-				},
-			},
-		},
-	}
 }
